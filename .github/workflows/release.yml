@@ -1,0 +1,318 @@
+name: Build and Release FairCom FDW
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packaging/debian/changelog'
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g., 1.0.0). Leave empty to read from changelog.'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-arm64-deb:
+    name: Build ARM64 Debian Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ARM64 .deb package
+        run: |
+          chmod +x ./packaging/build-deb-docker.sh
+          # Build for ARM64 with explicit platform
+          docker buildx build --platform linux/arm64 --load \
+            -t faircom-fdw-deb-builder-arm64 \
+            -f ./packaging/Dockerfile.debian ./packaging
+          
+          # Run build with ARM64 platform
+          docker run --rm \
+            --platform linux/arm64 \
+            -v "$PWD:/project:ro" \
+            -v "$PWD/build:/build" \
+            -w /build \
+            -e DEB_BUILD_ARCH=arm64 \
+            faircom-fdw-deb-builder-arm64 \
+            bash -c "
+              set -e
+              rm -rf /build/pkg && mkdir -p /build/pkg
+              cp -r /project/core /build/pkg/
+              cp -r /project/packaging/debian /build/pkg/
+              cp /project/README.md /build/pkg/
+              cd /build/pkg
+              dpkg-buildpackage -a arm64 -us -uc -b
+              mkdir -p /build/output
+              mv ../*.deb /build/output/ 2>/dev/null || true
+              mv ../*.ddeb /build/output/ 2>/dev/null || true
+              ls -lh /build/output/
+            "
+
+      - name: Upload ARM64 .deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-deb
+          path: |
+            build/output/*.deb
+            build/output/*.ddeb
+          retention-days: 7
+
+  build-arm64-rpm:
+    name: Build ARM64 RPM Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ARM64 .rpm package
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(head -1 packaging/debian/changelog | sed -E 's/.*\(([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+\).*/\1/')
+          fi
+          echo "Building RPM version: $VERSION"
+          docker buildx build --platform linux/arm64 --load \
+            -t faircom-fdw-rpm-builder-arm64 \
+            -f ./packaging/Dockerfile.rpm ./packaging
+          
+          docker run --rm \
+            --platform linux/arm64 \
+            -v "$PWD:/project:ro" \
+            -v "$PWD/build:/build" \
+            -w /build \
+            -e VERSION="$VERSION" \
+            faircom-fdw-rpm-builder-arm64 \
+            bash -c "
+              set -e
+              rm -rf /build/rpmbuild && mkdir -p /build/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+              cd /build/rpmbuild
+              cp /project/packaging/rpm/faircom_fdw.spec SPECS/
+              sed -i "s/@VERSION@/${VERSION}/g" SPECS/faircom_fdw.spec
+              tar czf SOURCES/faircom_fdw-${VERSION}.tar.gz --transform 's,^,faircom_fdw-${VERSION}/,' -C /project core packaging README.md
+              rpmbuild --target aarch64 --define '_topdir /build/rpmbuild' -bb SPECS/faircom_fdw.spec
+              mkdir -p /build/output
+              find RPMS -name '*.rpm' -exec cp {} /build/output/ \\;
+              ls -lh /build/output/
+            "
+
+      - name: Upload ARM64 .rpm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-rpm
+          path: |
+            build/output/*.rpm
+          retention-days: 7
+
+  build-x86_64-deb:
+    name: Build x86_64 Debian Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build x86_64 .deb package
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            -t faircom-fdw-deb-builder-amd64 \
+            -f ./packaging/Dockerfile.debian ./packaging
+          
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "$PWD:/project:ro" \
+            -v "$PWD/build:/build" \
+            -w /build \
+            faircom-fdw-deb-builder-amd64 \
+            bash -c "
+              set -e
+              rm -rf /build/pkg && mkdir -p /build/pkg
+              cp -r /project/core /build/pkg/
+              cp -r /project/packaging/debian /build/pkg/
+              cp /project/README.md /build/pkg/
+              cd /build/pkg
+              dpkg-buildpackage -a amd64 -us -uc -b
+              mkdir -p /build/output
+              mv ../*.deb /build/output/ 2>/dev/null || true
+              mv ../*.ddeb /build/output/ 2>/dev/null || true
+              ls -lh /build/output/
+            "
+
+      - name: Upload x86_64 .deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-deb
+          path: |
+            build/output/*.deb
+            build/output/*.ddeb
+          retention-days: 7
+
+  build-x86_64-rpm:
+    name: Build x86_64 RPM Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build x86_64 .rpm package
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(head -1 packaging/debian/changelog | sed -E 's/.*\(([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+\).*/\1/')
+          fi
+          echo "Building RPM version: $VERSION"
+          docker buildx build --platform linux/amd64 --load \
+            -t faircom-fdw-rpm-builder-amd64 \
+            -f ./packaging/Dockerfile.rpm ./packaging
+          
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "$PWD:/project:ro" \
+            -v "$PWD/build:/build" \
+            -w /build \
+            -e VERSION="$VERSION" \
+            faircom-fdw-rpm-builder-amd64 \
+            bash -c "
+              set -e
+              rm -rf /build/rpmbuild && mkdir -p /build/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+              cd /build/rpmbuild
+              cp /project/packaging/rpm/faircom_fdw.spec SPECS/
+              sed -i "s/@VERSION@/${VERSION}/g" SPECS/faircom_fdw.spec
+              tar czf SOURCES/faircom_fdw-${VERSION}.tar.gz --transform 's,^,faircom_fdw-${VERSION}/,' -C /project core packaging README.md
+              rpmbuild --target x86_64 --define '_topdir /build/rpmbuild' -bb SPECS/faircom_fdw.spec
+              mkdir -p /build/output
+              find RPMS -name '*.rpm' -exec cp {} /build/output/ \\;
+              ls -lh /build/output/
+            "
+
+      - name: Upload x86_64 .rpm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-rpm
+          path: |
+            build/output/*.rpm
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-arm64-deb, build-arm64-rpm, build-x86_64-deb, build-x86_64-rpm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-packages
+
+      - name: Display structure of downloaded files
+        run: |
+          ls -R release-packages
+          find release-packages -name "*.deb" -o -name "*.ddeb" -o -name "*.rpm"
+
+      - name: Consolidate packages
+        run: |
+          mkdir -p all-packages
+          find release-packages -name "*.deb" -exec cp {} all-packages/ \;
+          find release-packages -name "*.ddeb" -exec cp {} all-packages/ \;
+          find release-packages -name "*.rpm" -exec cp {} all-packages/ \;
+          ls -lh all-packages/
+
+      - name: Extract version from changelog
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(head -1 packaging/debian/changelog | sed -E 's/.*\(([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+\).*/\1/')
+          fi
+          CHANGELOG_MSG=$(sed -n '3s/^  \* //p' packaging/debian/changelog)
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION_TAG=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "CHANGELOG_MSG=${CHANGELOG_MSG}" >> $GITHUB_OUTPUT
+          echo "Releasing version: ${VERSION}"
+
+      - name: Prepare release notes
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_TAG="${{ steps.version.outputs.VERSION_TAG }}"
+          cat > release-notes.md << 'HEADER'
+          # FairCom FDW for PostgreSQL
+          HEADER
+          cat >> release-notes.md << EOF
+
+          ## Version ${VERSION_TAG}
+
+          ${{ steps.version.outputs.CHANGELOG_MSG }}
+
+          ## Packages
+
+          | Package | Platform | Filename |
+          |---------|----------|----------|
+          | DEB | Debian/Ubuntu ARM64 | postgresql-14-faircom-fdw_${VERSION}-1_arm64.deb |
+          | DEB | Debian/Ubuntu x86_64 | postgresql-14-faircom-fdw_${VERSION}-1_amd64.deb |
+          | RPM | RHEL/Rocky ARM64 | postgresql-14-faircom-fdw-${VERSION}-1.el9.aarch64.rpm |
+          | RPM | RHEL/Rocky x86_64 | postgresql-14-faircom-fdw-${VERSION}-1.el9.x86_64.rpm |
+
+          ## Installation
+
+          **Debian/Ubuntu:**
+          \`\`\`bash
+          sudo dpkg -i postgresql-14-faircom-fdw_${VERSION}-1_<arch>.deb
+          sudo apt-get -f install
+          \`\`\`
+
+          **RHEL/Rocky/CentOS:**
+          \`\`\`bash
+          sudo rpm -Uvh postgresql-14-faircom-fdw-${VERSION}-1.el9.<arch>.rpm
+          \`\`\`
+
+          ## Requirements
+
+          - PostgreSQL 14
+          - FairCom server 12.x or 13.x
+          - Linux (Ubuntu 22.04+, Rocky 9+, or compatible)
+          - Architecture: x86_64 or ARM64
+
+          See [README](https://github.com/toddstoffel/postgres-faircom-fdw) for full documentation.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION_TAG }}
+          name: ${{ steps.version.outputs.VERSION_TAG }}
+          files: all-packages/*
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

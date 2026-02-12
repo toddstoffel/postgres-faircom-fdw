@@ -1,0 +1,22 @@
+Source: postgresql-faircom-fdw
+Section: database
+Priority: optional
+Maintainer: FairCom Corporation <support@faircom.com>
+Build-Depends: debhelper (>= 10),
+               postgresql-server-dev-14,
+               libpq-dev
+Standards-Version: 4.5.1
+Homepage: https://github.com/faircom/faircom-fdw
+
+Package: postgresql-14-faircom-fdw
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         postgresql-14
+Description: FairCom Foreign Data Wrapper for PostgreSQL
+ This package provides a Foreign Data Wrapper (FDW) for PostgreSQL
+ that enables PostgreSQL to query FairCom database servers.
+ .
+ The FDW allows PostgreSQL to treat FairCom tables as if they were
+ native PostgreSQL tables, enabling seamless integration between
+ PostgreSQL and FairCom databases.

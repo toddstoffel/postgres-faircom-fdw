@@ -1,0 +1,100 @@
+{
+	"listeners": [
+	{
+		"serviceName": "http8080",
+		"description": "Port 8080 using insecure HTTP protocol for REST and Web Apps on all TCP/IP addresses bound to this server",
+		"port": 8080,
+		"protocol": "http",
+		"enabled": true
+	},
+	{
+		"serviceName": "https8443",
+		"description": "Port 8443 using TLS-secured HTTPS protocol for REST and Web Apps on all TCP/IP addresses bound to this server",
+		"port": 8443,
+		"protocol": "https",
+		"enabled": true,
+		"tls": {
+			"certificateFilename": "./web/fccert.pem"
+		}
+	}
+
+	],
+
+	"jsonActionApiDefaults":
+	{
+		"defaultApi": "db",
+		"defaultBinaryFormat": "hex",
+		"defaultDatabaseName": "ctreeSQL",
+		"defaultDebug": "max",
+		"defaultOwnerName": "admin",
+		"defaultResponseOptions":
+		{
+			"binaryFormat": "hex",
+			"dataFormat": "objects",
+			"numberFormat": "number"
+		},
+		"idleConnectionTimeoutSeconds": 3600,
+		"idleCursorTimeoutSeconds": 600,
+		"defaultRetentionPolicy": "autoPurge",
+		"defaultRetentionUnit": "week",
+		"defaultRetentionPeriod": 4
+	},
+
+	"applicationRoot": "./web/apps/",
+
+	"applications": [
+	{
+		"serviceName": "Ace Monitor",
+		"uriPath": "AceMonitor",
+		"serviceLibrary": "libctmonitor.so",
+		"enabled": true
+	},
+	{
+		"serviceName": "Data Explorer",
+		"uriPath": "SQLExplorer",
+		"serviceLibrary": "libctsqlexplorer.so",
+		"enabled": true
+	},
+	{
+		"serviceName": "ISAM Explorer",
+		"uriPath": "ISAMExplorer",
+		"serviceLibrary": "libctisamexplorer.so",
+		"enabled": true
+	},
+	{
+		"serviceName": "Rest CRUD",
+		"uriPath": "ctree",
+		"serviceLibrary": "libctrest.so",
+		"enabled": true
+	}
+	
+	],
+
+	"apiRoot": "./api",
+
+	"apis": [
+	{
+		"serviceName": "db",
+		"enabled": true
+	}
+	],
+
+
+	"otherServices": [
+	{
+		"serviceName": "dbnotify",
+		"serviceLibrary": "./dbnotify/libfcdbnotify.so",
+		"enabled": false
+	},
+	{
+		"serviceName": "ctagent",
+		"serviceLibrary": "./agent/libctagent.so",
+		"enabled": false
+	},
+	{
+		"serviceName": "aggregation",
+		"serviceLibrary": "./aggregation/libcttimestamp.so",
+		"enabled": false
+	}
+	]
+}

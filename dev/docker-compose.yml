@@ -1,0 +1,41 @@
+services:
+  faircom:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile.faircom
+    container_name: faircom-server
+    ports:
+      - "5597:5597"
+      - "6597:6597"
+      - "8080:8080"
+      - "8443:8443"
+    networks:
+      - fdw-network
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /opt/faircom/data/CTSTATUS.FCS ] && pgrep -x faircom || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile.postgres
+      args:
+        BUILD_MODE: ${FDW_BUILD_MODE:-package}
+        RELEASE_VERSION: ${FDW_RELEASE_VERSION:-latest}
+    container_name: postgres-server
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: testdb
+    ports:
+      - "5432:5432"
+    depends_on:
+      faircom:
+        condition: service_healthy
+    networks:
+      - fdw-network
+
+networks:
+  fdw-network:
+    driver: bridge

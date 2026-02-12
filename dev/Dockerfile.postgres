@@ -1,0 +1,104 @@
+FROM ubuntu:22.04 AS base
+
+ARG BUILD_MODE=package
+ARG RELEASE_VERSION=latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ---------------------------------------------------------------------------
+# Stage 1: Source build (only when BUILD_MODE=source)
+# ---------------------------------------------------------------------------
+FROM base AS build-source
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-14 \
+    postgresql-server-dev-14 \
+    build-essential \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY core/ /tmp/fdw-source/
+
+RUN cd /tmp/fdw-source \
+    && make PG_CONFIG=/usr/bin/pg_config clean \
+    && make PG_CONFIG=/usr/bin/pg_config \
+    && make PG_CONFIG=/usr/bin/pg_config install
+
+# ---------------------------------------------------------------------------
+# Stage 2: Package install (only when BUILD_MODE=package)
+# ---------------------------------------------------------------------------
+FROM base AS build-package
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG RELEASE_VERSION
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN REPO="toddstoffel/postgres-faircom-fdw" \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$RELEASE_VERSION" = "latest" ]; then \
+           TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name'); \
+       else \
+           TAG="$RELEASE_VERSION"; \
+       fi \
+    && VERSION="${TAG#v}" \
+    && URL="https://github.com/${REPO}/releases/download/${TAG}/postgresql-14-faircom-fdw_${VERSION}-1_${ARCH}.deb" \
+    && echo "Downloading ${URL}" \
+    && curl -fSL -o /tmp/faircom-fdw.deb "$URL"
+
+# ---------------------------------------------------------------------------
+# Stage 3: Runtime image
+# ---------------------------------------------------------------------------
+FROM base AS runtime
+
+ARG BUILD_MODE
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-14 \
+    postgresql-client-14 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the FDW extension based on build mode
+RUN --mount=from=build-package,source=/tmp,target=/tmp/pkg \
+    --mount=from=build-source,source=/usr/lib/postgresql,target=/tmp/src-pg \
+    --mount=from=build-source,source=/usr/share/postgresql,target=/tmp/src-share \
+    if [ "$BUILD_MODE" = "source" ]; then \
+        echo "Installing FDW from source build" \
+        && cp -a /tmp/src-pg/14/lib/faircom_fdw.so /usr/lib/postgresql/14/lib/ \
+        && cp -a /tmp/src-share/14/extension/faircom_fdw* /usr/share/postgresql/14/extension/; \
+    else \
+        echo "Installing FDW from package" \
+        && dpkg -i /tmp/pkg/faircom-fdw.deb \
+        && apt-get update && apt-get install -f -y --no-install-recommends \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Install FairCom client library for the host architecture
+COPY core/faircom_libs/ /tmp/faircom_libs/
+RUN ARCH=$(dpkg --print-architecture) \
+    && cp /tmp/faircom_libs/${ARCH}/lib/libmtclient.so /usr/lib/libmtclient.so \
+    && chmod 755 /usr/lib/libmtclient.so \
+    && ldconfig \
+    && rm -rf /tmp/faircom_libs
+
+# Initialize PostgreSQL: configure networking, credentials, and foreign tables
+COPY dev/init_postgresql.sql /docker-entrypoint-initdb.d/
+
+RUN echo "host all all 0.0.0.0/0 md5" >> /etc/postgresql/14/main/pg_hba.conf \
+    && echo "listen_addresses='*'" >> /etc/postgresql/14/main/postgresql.conf \
+    && service postgresql start \
+    && su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\"" \
+    && su - postgres -c "psql -c \"CREATE DATABASE testdb;\"" \
+    && su - postgres -c "psql -d testdb < /docker-entrypoint-initdb.d/init_postgresql.sql" \
+    && service postgresql stop
+
+USER postgres
+EXPOSE 5432
+
+CMD ["/usr/lib/postgresql/14/bin/postgres", "-D", "/var/lib/postgresql/14/main", \
+     "-c", "config_file=/etc/postgresql/14/main/postgresql.conf"]

@@ -1,0 +1,56 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tar \
+    curl \
+    python3 \
+    python3-pip \
+    && pip3 install --no-cache-dir requests \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy and extract the FairCom server for the target architecture
+COPY tars/ /tmp/tars/
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN mkdir -p /opt/faircom \
+    && ARCH=$(dpkg --print-architecture) \
+    && case "${ARCH}" in \
+         arm64) PATTERN="arm_generic" ;; \
+         amd64) PATTERN="x64" ;; \
+         *)     echo "Unsupported architecture: ${ARCH}" >&2; exit 1 ;; \
+       esac \
+    && TARBALL=$(find /tmp/tars -maxdepth 1 -name "FairCom-DB.linux.${PATTERN}.*tar" -print -quit) \
+    && if [ -z "$TARBALL" ]; then \
+         echo "No FairCom tar found for ${PATTERN} in /tmp/tars/" >&2; exit 1; \
+       fi \
+    && EXTRACT_DIR=$(tar -tf "$TARBALL" 2>/dev/null | head -1 | cut -d/ -f1 || true) \
+    && if [ -z "$EXTRACT_DIR" ]; then \
+         echo "Could not determine extract directory from tar" >&2; exit 1; \
+       fi \
+    && tar -xf "$TARBALL" -C /tmp \
+    && cp -a "/tmp/${EXTRACT_DIR}/." /opt/faircom/ \
+    && rm -rf /tmp/tars /tmp/"${EXTRACT_DIR}" \
+    && chmod +x /opt/faircom/server/faircom \
+    && find /opt/faircom/tools -type f -exec chmod +x {} + \
+    && mkdir -p /opt/faircom/data /opt/faircom/tranlogs
+
+# Copy configuration and initialization files
+COPY dev/config/ctsrvr.cfg   /opt/faircom/config/
+COPY dev/config/services.json /opt/faircom/config/
+COPY dev/init_faircom.py      /opt/faircom/
+COPY dev/csv/                  /opt/faircom/csv/
+COPY dev/faircom-entrypoint.sh /opt/faircom/
+
+RUN chmod +x /opt/faircom/init_faircom.py /opt/faircom/faircom-entrypoint.sh
+
+WORKDIR /opt/faircom/server
+
+ENV LD_LIBRARY_PATH=/opt/faircom/server
+
+EXPOSE 5597 6597 8080 8443
+
+ENTRYPOINT ["/opt/faircom/faircom-entrypoint.sh"]

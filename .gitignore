@@ -1,0 +1,95 @@
+# Git ignore file for FairCom FDW
+
+# Build artifacts
+build/*.o
+build/*.so
+build/*.bc
+*.o
+*.so
+*.dylib
+*.dll
+*.a
+*.dSYM/
+src/*.o
+
+# Build artifacts should stay in build/ directory
+# (removed obsolete symlinks from root)
+
+# PostgreSQL extension artifacts
+*.bc
+
+# Backup and temporary files
+*~
+*.swp
+*.swo
+.*.swp
+.DS_Store
+
+# Build directories
+/build/
+/dist/
+
+# Allow FairCom SDK libraries (override *.so, *.a, *.dll rules above)
+!core/faircom_libs/**
+
+# Environment files
+.env
+*.env
+!.env.example
+!dev/.env
+
+# Docker volumes
+postgres_data/
+faircom_data/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+.project
+.cproject
+.settings/
+.github/copilot-instructions.md
+
+# Local scripts (developer-only)
+scripts/
+
+# Test artifacts
+/test/results/
+/test/tmp/
+*.log
+tests/output.txt
+tests/output*.txt
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# OS specific
+Thumbs.db
+Desktop.ini
+
+# Compiled Python files (if adding Python tests)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Documentation build
+/docs/_build/
+/docs/.doctrees/
+
+# Package files (temporary extraction directories)
+tars/
+faircom_tar/
+FairCom-DB.*/
+*.tar
+*.tar.gz
+
+# Generated .so file (rebuild on target system)
+/faircom_fdw.so
+build/

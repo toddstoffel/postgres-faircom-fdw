@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+# FairCom FDW Debian packaging rules
+
+export DH_VERBOSE = 1
+export PG_CONFIG = /usr/lib/postgresql/14/bin/pg_config
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(eval UNAME_M := $(shell uname -m))
+	$(eval FAIRCOM_ARCH := $(if $(filter aarch64,$(UNAME_M)),arm64,$(if $(filter x86_64,$(UNAME_M)),amd64,$(UNAME_M))))
+	cd core && $(MAKE) PG_CONFIG=$(PG_CONFIG) WARN_CFLAGS="-w" \
+		FAIRCOM_HOME=$(CURDIR)/core/faircom_libs/$(FAIRCOM_ARCH) \
+		SHLIB_LINK="-L$(CURDIR)/core/faircom_libs/$(FAIRCOM_ARCH)/lib -lmtclient -Wl,-rpath,/usr/lib/faircom/lib"
+
+override_dh_auto_install:
+	cd core && $(MAKE) PG_CONFIG=$(PG_CONFIG) DESTDIR=$(CURDIR)/debian/postgresql-14-faircom-fdw install
+	
+	# Detect architecture and install FairCom libraries
+	$(eval UNAME_M := $(shell uname -m))
+	$(eval FAIRCOM_ARCH := $(if $(filter aarch64,$(UNAME_M)),arm64,$(if $(filter x86_64,$(UNAME_M)),amd64,$(UNAME_M))))
+	mkdir -p $(CURDIR)/debian/postgresql-14-faircom-fdw/usr/lib/faircom/lib
+	mkdir -p $(CURDIR)/debian/postgresql-14-faircom-fdw/usr/lib/faircom/include
+	cp -r core/faircom_libs/$(FAIRCOM_ARCH)/lib/* $(CURDIR)/debian/postgresql-14-faircom-fdw/usr/lib/faircom/lib/
+	cp -r core/faircom_libs/$(FAIRCOM_ARCH)/include/* $(CURDIR)/debian/postgresql-14-faircom-fdw/usr/lib/faircom/include/
+	find $(CURDIR)/debian/postgresql-14-faircom-fdw/usr/lib/faircom/include -type f -exec chmod 0644 {} +
+	find $(CURDIR)/debian/postgresql-14-faircom-fdw/usr/lib/faircom/include -type d -exec chmod 0755 {} +
+
+override_dh_auto_clean:
+	cd core && $(MAKE) clean || true
+
+override_dh_installdocs:
+	dh_installdocs -A README.md
+
+override_dh_auto_test:
+	# Skip tests during package build

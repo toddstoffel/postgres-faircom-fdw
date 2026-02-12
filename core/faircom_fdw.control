@@ -1,0 +1,5 @@
+# faircom_fdw extension
+comment = 'FairCom foreign data wrapper'
+default_version = '1.0'
+module_pathname = '$libdir/faircom_fdw'
+relocatable = true

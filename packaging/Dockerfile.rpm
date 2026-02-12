@@ -1,0 +1,28 @@
+FROM rockylinux:9
+
+# Install build dependencies
+# Use PGDG repo to provide postgresql{11..16}-devel packages needed by the spec.
+RUN dnf -y install dnf-plugins-core ca-certificates && \
+    dnf config-manager --set-enabled crb && \
+    dnf -qy module disable postgresql && \
+    ARCH="$(uname -m)" && \
+    if [ "$ARCH" = "aarch64" ]; then PGDG_ARCH="aarch64"; \
+    elif [ "$ARCH" = "x86_64" ]; then PGDG_ARCH="x86_64"; \
+    else PGDG_ARCH="$ARCH"; fi && \
+    dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${PGDG_ARCH}/pgdg-redhat-repo-latest.noarch.rpm" && \
+    dnf -y install \
+        rpm-build \
+        gcc \
+        make \
+        openssl-devel \
+        perl-IPC-Run \
+        postgresql14-devel \
+        postgresql15-devel \
+        postgresql16-devel \
+    && dnf clean all
+
+# Create build directory
+WORKDIR /build
+
+# Entry point will be the build script
+CMD ["/bin/bash"]
