@@ -1,6 +1,6 @@
 # FairCom Foreign Data Wrapper for PostgreSQL
 
-![Version](https://img.shields.io/badge/version-1.0.4-blue)
+![Version](https://img.shields.io/badge/version-1.0.5-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14-blue)
 ![Platform](https://img.shields.io/badge/platform-x86__64%20%7C%20ARM64-green)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
@@ -120,7 +120,7 @@ The Docker environment is configured through `dev/.env`:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FDW_BUILD_MODE` | `package` | `package` installs from GitHub Releases; `source` compiles from `core/src/` |
-| `FDW_RELEASE_VERSION` | `latest` | Release to install in package mode (`latest` or a specific tag like `v1.0.4`) |
+| `FDW_RELEASE_VERSION` | `latest` | Release to install in package mode (`latest` or a specific tag like `v1.0.5`) |
 
 After changing `.env`, rebuild the PostgreSQL container:
 

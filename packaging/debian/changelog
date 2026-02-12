@@ -1,3 +1,9 @@
+postgresql-faircom-fdw (1.0.5-1) jammy; urgency=medium
+
+  * Release v1.0.5
+
+ -- FairCom Corporation <support@faircom.com>  Thu, 12 Feb 2026 19:40:19 +0000
+
 postgresql-faircom-fdw (1.0.4-1) jammy; urgency=medium
 
   * Release v1.0.4
