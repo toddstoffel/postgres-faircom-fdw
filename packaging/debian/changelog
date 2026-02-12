@@ -1,3 +1,9 @@
+postgresql-faircom-fdw (1.0.3-1) jammy; urgency=medium
+
+  * Production hardening: connection safety, NUMERIC precision, dead code cleanup
+
+ -- FairCom Corporation <support@faircom.com>  Thu, 12 Feb 2026 06:11:27 +0000
+
 postgresql-faircom-fdw (1.0.2-1) jammy; urgency=medium
 
   * Fix write operation port default, option name parsing, and null-pointer safety
