@@ -5,7 +5,8 @@
  *
  * Error handling, option parsing, and other helper functions.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -126,7 +127,8 @@ faircom_parse_table_options(ForeignTable *table,
 	{
 		DefElem *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "faircom_table") == 0)
+		if (strcmp(def->defname, "table_name") == 0 ||
+			strcmp(def->defname, "faircom_table") == 0)
 			opts->table_name = defGetString(def);
 		else if (strcmp(def->defname, "use_index") == 0)
 			opts->use_index = defGetString(def);
@@ -139,47 +141,6 @@ faircom_parse_table_options(ForeignTable *table,
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_OPTION_NAME_NOT_FOUND),
-				 errmsg("faircom_table option is required for foreign tables")));
+				 errmsg("table_name option is required for foreign tables")));
 	}
-}
-
-/*
- * Get option value from a list
- */
-char *
-faircom_get_option_value(Oid foreignoid, const char *optname)
-{
-	ForeignTable *table;
-	ForeignServer *server;
-	UserMapping *user;
-	ListCell *lc;
-
-	/* Try table options first */
-	table = GetForeignTable(foreignoid);
-	foreach(lc, table->options)
-	{
-		DefElem *def = (DefElem *) lfirst(lc);
-		if (strcmp(def->defname, optname) == 0)
-			return defGetString(def);
-	}
-
-	/* Try server options */
-	server = GetForeignServer(table->serverid);
-	foreach(lc, server->options)
-	{
-		DefElem *def = (DefElem *) lfirst(lc);
-		if (strcmp(def->defname, optname) == 0)
-			return defGetString(def);
-	}
-
-	/* Try user mapping options */
-	user = GetUserMapping(GetUserId(), table->serverid);
-	foreach(lc, user->options)
-	{
-		DefElem *def = (DefElem *) lfirst(lc);
-		if (strcmp(def->defname, optname) == 0)
-			return defGetString(def);
-	}
-
-	return NULL;
 }

@@ -6,7 +6,8 @@
  * Implements in-memory caching for query results with TTL-based expiration.
  * Focuses on COUNT(*) queries which are common in dashboards and reports.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */

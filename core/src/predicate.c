@@ -6,7 +6,8 @@
  * This module analyzes PostgreSQL WHERE clauses and determines which
  * predicates can be pushed down to FairCom for remote execution.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -385,7 +386,6 @@ faircom_extract_predicate(Expr *expr, TupleDesc tupdesc)
 	{
 		constant = (Const *) left;
 		var = (Var *) right;
-		/* TODO: For reversed operands, we may need to flip the operator */
 	}
 	else
 		return NULL;
@@ -830,12 +830,11 @@ faircom_apply_predicates(CTHANDLE hTable,
 						pred->cached_float8_value = float_val;
 						pred->cached_float8_valid = true;
 					}
-					int64 int_value = (int64)pred->cached_float8_value;
 
-					ctdbSetFieldAsSigned(hRecord, field_num, (CTSIGNED)int_value);
+					ctdbSetFieldAsFloat(hRecord, field_num, pred->cached_float8_value);
 					result_mode = pred->ctfind_mode;
-					FAIRCOM_DEBUG_LOG(DEBUG2, "Applied index predicate: %s = %lld (field %d, mode=%d from NUMERIC)",
-						 pred->attname, (long long)int_value, field_num, result_mode);
+					FAIRCOM_DEBUG_LOG(DEBUG2, "Applied index predicate: %s = %f (field %d, mode=%d from NUMERIC)",
+						 pred->attname, pred->cached_float8_value, field_num, result_mode);
 				}
 				break;
 
@@ -1146,20 +1145,7 @@ check_single_predicate(CTHANDLE hRecord, FairComPredicate *pred)
 			}
 
 		case INT8OID:
-		case NUMERICOID:
-			if (pred->const_type == NUMERICOID)
-			{
-				/* Use cached conversion to avoid repeated DirectFunctionCall1 overhead */
-				if (!pred->cached_float8_valid)
-				{
-					float8 float_val = DatumGetFloat8(DirectFunctionCall1(numeric_float8, pred->const_value));
-					pred->cached_float8_value = float_val;
-					pred->cached_float8_valid = true;
-				}
-				const_int64 = (int64)pred->cached_float8_value;
-			}
-			else
-				const_int64 = DatumGetInt64(pred->const_value);
+			const_int64 = DatumGetInt64(pred->const_value);
 
 			if (ctdbGetFieldAsSigned(hRecord, pred->attnum - 1, &int_value) != CTDBRET_OK)
 				return false;
@@ -1171,6 +1157,29 @@ check_single_predicate(CTHANDLE hRecord, FairComPredicate *pred)
 				case CTFIND_GE: return (int_value >= const_int64);
 				case CTFIND_LT: return (int_value < const_int64);
 				case CTFIND_LE: return (int_value <= const_int64);
+				default: return false;
+			}
+
+		case NUMERICOID:
+			/* Use cached conversion to avoid repeated DirectFunctionCall1 overhead */
+			if (!pred->cached_float8_valid)
+			{
+				float8 float_val = DatumGetFloat8(DirectFunctionCall1(numeric_float8, pred->const_value));
+				pred->cached_float8_value = float_val;
+				pred->cached_float8_valid = true;
+			}
+			const_float = pred->cached_float8_value;
+
+			if (ctdbGetFieldAsFloat(hRecord, pred->attnum - 1, &float_value) != CTDBRET_OK)
+				return false;
+
+			switch (pred->ctfind_mode)
+			{
+				case CTFIND_EQ: return (float_value == const_float);
+				case CTFIND_GT: return (float_value > const_float);
+				case CTFIND_GE: return (float_value >= const_float);
+				case CTFIND_LT: return (float_value < const_float);
+				case CTFIND_LE: return (float_value <= const_float);
 				default: return false;
 			}
 
@@ -1197,18 +1206,25 @@ check_single_predicate(CTHANDLE hRecord, FairComPredicate *pred)
 			char *const_str = TextDatumGetCString(pred->const_value);
 			char field_text[1024];  /* Buffer for field string */
 			int cmp_result;
+			bool result;
 
 			/* Get field as string */
 			if (ctdbGetFieldAsString(hRecord, pred->attnum - 1, field_text, sizeof(field_text)) != CTDBRET_OK)
+			{
+				pfree(const_str);
 				return false;
+			}
 
 			/* Handle LIKE pattern matching */
 			if (pred->ctfind_mode == CTFIND_LIKE)
 			{
-				return simple_pattern_match(field_text, const_str);
+				result = simple_pattern_match(field_text, const_str);
+				pfree(const_str);
+				return result;
 			}
 
 			cmp_result = strcmp(field_text, const_str);
+			pfree(const_str);
 
 			/* String comparison operators */
 			switch (pred->ctfind_mode)
@@ -1333,9 +1349,8 @@ faircom_fetch_in_list_batch(CTHANDLE hTable,
 						pred->cached_float8_value = float_val;
 						pred->cached_float8_valid = true;
 					}
-					int64 int_value = (int64)pred->cached_float8_value;
-					ctdbSetFieldAsSigned(hRecord, field_num, (CTSIGNED)int_value);
-					FAIRCOM_DEBUG_LOG(DEBUG2, "IN list lookup: %s = %lld (from NUMERIC)", pred->attname, (long long)int_value);
+					ctdbSetFieldAsFloat(hRecord, field_num, pred->cached_float8_value);
+					FAIRCOM_DEBUG_LOG(DEBUG2, "IN list lookup: %s = %f (from NUMERIC)", pred->attname, pred->cached_float8_value);
 				}
 				break;
 

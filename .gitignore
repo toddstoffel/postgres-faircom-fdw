@@ -76,6 +76,9 @@ Desktop.ini
 
 # Compiled Python files (if adding Python tests)
 __pycache__/
+
+# Internal workflow tracking
+TODO.md
 *.py[cod]
 *$py.class
 

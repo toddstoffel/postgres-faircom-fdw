@@ -6,7 +6,8 @@
  * Handles conversion of values between FairCom CTDB types and
  * PostgreSQL Datum format.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */

@@ -6,7 +6,8 @@
  * Helper functions for query execution.
  * Predicate pushdown logic is now in predicate.c
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -17,20 +18,6 @@
 #include "utils/lsyscache.h"
 
 /*
- * Set up FairCom scan based on plan information
- */
-void
-faircom_setup_scan(FairComScanState *scanstate)
-{
-	/* TODO: Implement scan setup
-	 * - Parse fdw_private to extract remote_conds
-	 * - Set up index if specified
-	 * - Configure search keys for indexed lookups
-	 * - Set find_mode based on operator
-	 */
-}
-
-/*
  * Convert PostgreSQL operator OID to FairCom find mode
  */
 CTFIND_MODE
@@ -38,6 +25,9 @@ faircom_operator_to_find_mode(Oid opno)
 {
 	/* Get operator name */
 	char *opname = get_opname(opno);
+
+	if (opname == NULL)
+		return CTFIND_EQ;
 
 	if (strcmp(opname, "=") == 0)
 		return CTFIND_EQ;

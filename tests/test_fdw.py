@@ -730,7 +730,6 @@ class FDWTestSuite:
             start = time.time()
             try:
                 with self.conn.cursor() as cur:
-                    # Debug: Check current salary
                     cur.execute(f"SELECT salary, job_title FROM employees WHERE emp_id = {test_emp_id};")
                     before = cur.fetchone()
 
@@ -867,7 +866,6 @@ class FDWTestSuite:
             start = time.time()
             try:
                 with self.conn.cursor() as cur:
-                    # Debug: Check current record
                     cur.execute(f"SELECT emp_id, salary FROM employees WHERE emp_id = {test_emp_id_null};")
                     before_delete = cur.fetchone()
 

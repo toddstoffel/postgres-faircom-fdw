@@ -6,7 +6,8 @@
  * Caches table metadata, column information, and index details to avoid
  * repeated FairCom metadata calls during query planning.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */

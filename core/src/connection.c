@@ -6,7 +6,8 @@
  * Maintains a pool of connections to FairCom servers and handles
  * transaction coordination.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -346,7 +347,6 @@ faircom_xact_callback(XactEvent event, void *arg)
 			break;
 
 		case XACT_EVENT_PREPARE:
-			/* TODO: Implement two-phase commit for write operations */
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("prepared transactions are not supported with FairCom FDW")));

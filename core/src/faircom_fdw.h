@@ -3,7 +3,8 @@
  * faircom_fdw.h
  *		  Foreign-data wrapper for FairCom databases
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -57,6 +58,29 @@ typedef struct FairComGlobalStats
 
 /* Global statistics instance - defined in faircom_fdw.c */
 extern FairComGlobalStats global_stats;
+
+/*
+ * PostgreSQL built-in aggregate function OID ranges
+ * These are stable across PG 14.x but should be verified if targeting
+ * other major versions. See src/include/catalog/pg_proc.dat in PG source.
+ */
+#define AGG_COUNT_ANY_OID		2147	/* count("any") */
+#define AGG_COUNT_STAR_OID		2803	/* count(*) */
+#define AGG_COUNT_MAX_OID		2150	/* upper bound of COUNT family */
+#define AGG_SUM_MIN_OID			2108	/* sum(int8) - start of SUM family */
+#define AGG_SUM_MAX_OID			2114	/* sum(float8) - end of SUM family */
+#define AGG_AVG_MIN_OID			2101	/* avg(int8) - start of AVG family */
+#define AGG_AVG_MAX_OID			2106	/* avg(float8) - end of AVG family */
+#define AGG_MIN_MIN_OID			2131	/* min(int8) - start of MIN family */
+#define AGG_MIN_MAX_OID			2146	/* min(text) - end of MIN family */
+#define AGG_MAX_MIN_OID			2115	/* max(int8) - start of MAX family */
+#define AGG_MAX_MAX_OID			2130	/* max(text) - end of MAX family */
+
+#define IS_COUNT_AGG(oid)		((oid) == AGG_COUNT_ANY_OID || (oid) == AGG_COUNT_STAR_OID)
+#define IS_SUM_AGG(oid)			((oid) >= AGG_SUM_MIN_OID && (oid) <= AGG_SUM_MAX_OID)
+#define IS_AVG_AGG(oid)			((oid) >= AGG_AVG_MIN_OID && (oid) <= AGG_AVG_MAX_OID)
+#define IS_MIN_AGG(oid)			((oid) >= AGG_MIN_MIN_OID && (oid) <= AGG_MIN_MAX_OID)
+#define IS_MAX_AGG(oid)			((oid) >= AGG_MAX_MIN_OID && (oid) <= AGG_MAX_MAX_OID)
 
 /*
  * Conditional debug logging macros
@@ -137,17 +161,6 @@ typedef struct FairComModifyState
 typedef struct FairComConnection FairComConnection;
 
 /*
- * Shared memory structure for parallel scan coordination
- */
-typedef struct FairComParallelScanState
-{
-	int			nworkers;			/* Number of parallel workers */
-	int64		total_rows;			/* Total rows in table (from plan cache) */
-	pg_atomic_uint64 next_row;		/* Next row to fetch (atomic counter) */
-	int			batch_size;			/* Rows per worker batch */
-} FairComParallelScanState;
-
-/*
  * FDW-specific information for ForeignScanState
  */
 typedef struct FairComScanState
@@ -214,17 +227,8 @@ typedef struct FairComScanState
 	int			total_batches;			/* Total number of batches fetched */
 	int			total_rows_fetched;		/* Total rows across all batches */
 
-	/* Parallel scan support */
-	FairComParallelScanState *parallel_state;	/* Shared memory state (if parallel) */
-	bool		is_parallel_worker;		/* True if this is a parallel worker */
-	int64		worker_start_row;		/* First row this worker should fetch */
-	int64		worker_end_row;			/* Last row this worker should fetch */
-
 	/* Target list for projection */
 	List	   *target_attrs;
-
-	/* Temporary buffer for string conversion */
-	char		raw_buffer[8192];
 } FairComScanState;
 
 /*
@@ -277,7 +281,6 @@ extern void faircom_force_release_connection(FairComConnection *conn);
 /* schema.c */
 extern List *faircom_import_foreign_schema(ImportForeignSchemaStmt *stmt,
 										   Oid serverOid);
-extern void faircom_get_table_metadata(CTHANDLE hTable, TupleDesc tupdesc);
 extern Oid faircom_type_to_pg_type(CTDBTYPE ctdbtype);
 
 /* predicate.c - Predicate pushdown support */
@@ -305,7 +308,6 @@ extern int faircom_fetch_in_list_batch(CTHANDLE hTable,
 									   int max_batch);
 
 /* query.c */
-extern void faircom_setup_scan(FairComScanState *scanstate);
 extern CTFIND_MODE faircom_operator_to_find_mode(Oid opno);
 
 /* types.c */

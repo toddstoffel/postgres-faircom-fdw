@@ -17,7 +17,7 @@ Release:        1%{?dist}
 Summary:        FairCom Foreign Data Wrapper for PostgreSQL
 
 License:        Custom
-URL:            https://github.com/faircom/faircom-fdw
+URL:            https://github.com/toddstoffel/postgres-faircom-fdw
 Source0:        %{sname}-%{version}.tar.gz
 
 BuildRequires:  postgresql%{pgmajorversion}-devel
@@ -66,6 +66,7 @@ chmod 0644 %{buildroot}%{pginstdir}/share/extension/%{sname}.control
 chmod 0644 %{buildroot}%{pginstdir}/share/extension/%{sname}--*.sql
 
 %files
+%license LICENSE
 %doc README.md
 %{pginstdir}/lib/%{sname}.so
 %{pginstdir}/lib/bitcode/faircom_fdw*
@@ -75,10 +76,9 @@ chmod 0644 %{buildroot}%{pginstdir}/share/extension/%{sname}--*.sql
 /usr/lib/faircom/include/*
 
 %changelog
-* Mon Jan 06 2025 FairCom Corporation <support@faircom.com> - 1.0.0-1
-- Initial RPM release
-- Support for PostgreSQL 11, 12, 13, 14, 15, 16
-- Connection pooling and caching
-- Predicate pushdown optimization
-- Type mapping for common PostgreSQL types
-- Schema introspection
+* Wed Feb 11 2026 FairCom Corporation <support@faircom.com> - @VERSION@-1
+- Fix write operation port default and option name parsing
+- Add null-pointer safety in operator lookup
+- Memory leak fix in predicate evaluation
+- Commit failures now properly propagate errors
+- Copyright and packaging metadata updates

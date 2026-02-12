@@ -6,7 +6,8 @@
  * This module implements the PostgreSQL FDW API callbacks and coordinates
  * the other subsystems (connection management, query translation, etc.)
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -107,28 +108,6 @@ static bool faircomAnalyzeForeignTable(Relation relation,
 
 static List *faircomImportForeignSchema(ImportForeignSchemaStmt *stmt,
 										Oid serverOid);
-
-/* Parallel scan functions */
-static bool faircomIsForeignScanParallelSafe(PlannerInfo *root,
-											 RelOptInfo *rel,
-											 RangeTblEntry *rte);
-
-static Size faircomEstimateDSMForeignScan(ForeignScanState *node,
-										   ParallelContext *pcxt);
-
-static void faircomInitializeDSMForeignScan(ForeignScanState *node,
-											 ParallelContext *pcxt,
-											 void *coordinate);
-
-static void faircomReInitializeDSMForeignScan(ForeignScanState *node,
-											   ParallelContext *pcxt,
-											   void *coordinate);
-
-static void faircomInitializeWorkerForeignScan(ForeignScanState *node,
-												shm_toc *toc,
-												void *coordinate);
-
-static void faircomShutdownForeignScan(ForeignScanState *node);
 
 /* Write operation functions */
 static void faircomAddForeignUpdateTargets(PlannerInfo *root,
@@ -283,21 +262,6 @@ faircom_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ExplainForeignScan = faircomExplainForeignScan;
 	routine->AnalyzeForeignTable = faircomAnalyzeForeignTable;
 	routine->ImportForeignSchema = faircomImportForeignSchema;
-
-	/* Parallel scan support */
-	routine->IsForeignScanParallelSafe = faircomIsForeignScanParallelSafe;
-	routine->EstimateDSMForeignScan = faircomEstimateDSMForeignScan;
-	routine->InitializeDSMForeignScan = faircomInitializeDSMForeignScan;
-	routine->ReInitializeDSMForeignScan = faircomReInitializeDSMForeignScan;
-	routine->InitializeWorkerForeignScan = faircomInitializeWorkerForeignScan;
-	routine->ShutdownForeignScan = faircomShutdownForeignScan;
-
-	/*
-	 * Async execution NOT supported in this version
-	 * PostgreSQL 15 async FDW API is complex and requires non-blocking I/O
-	 * FairCom CTDB SDK uses blocking calls, so async would provide no benefit
-	 * TODO: Future - investigate if FairCom SDK can support true async I/O
-	 */
 
 	/* Write operations */
 	routine->IsForeignRelUpdatable = faircomIsForeignRelUpdatable;
@@ -897,7 +861,7 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 						FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Aggregate has DISTINCT/FILTER/ORDER BY - disabling pushdown");
 					}
 					/* Check aggregate type and enable pushdown */
-					else if (aggref->aggfnoid == 2147 || aggref->aggfnoid == 2803)  /* COUNT */
+					else if (IS_COUNT_AGG(aggref->aggfnoid))  /* COUNT */
 					{
 						scanstate->is_aggregate_pushdown = true;
 						scanstate->aggregate_fnoid = aggref->aggfnoid;
@@ -1073,7 +1037,7 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 	if (scanstate->is_aggregate_pushdown)
 	{
 		char *predicate_str = "";
-		bool is_count = (scanstate->aggregate_fnoid == 2147 || scanstate->aggregate_fnoid == 2803);
+		bool is_count = IS_COUNT_AGG(scanstate->aggregate_fnoid);
 		List *remote_exprs = NIL;
 		bool has_where_clause = false;
 		int64 cached_result;
@@ -1331,22 +1295,22 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 						}
 
 						/* Accumulate based on aggregate type */
-						if (scanstate->aggregate_fnoid >= 2108 && scanstate->aggregate_fnoid <= 2114)  /* SUM */
+						if (IS_SUM_AGG(scanstate->aggregate_fnoid))  /* SUM */
 						{
 							scanstate->aggregate_sum += value;
 						}
-						else if (scanstate->aggregate_fnoid >= 2101 && scanstate->aggregate_fnoid <= 2106)  /* AVG */
+						else if (IS_AVG_AGG(scanstate->aggregate_fnoid))  /* AVG */
 						{
 							scanstate->aggregate_sum += value;
 							scanstate->aggregate_count++;
 						}
-						else if (scanstate->aggregate_fnoid >= 2131 && scanstate->aggregate_fnoid <= 2146)  /* MIN */
+						else if (IS_MIN_AGG(scanstate->aggregate_fnoid))  /* MIN */
 						{
 							if (scanstate->aggregate_count == 0 || value < scanstate->aggregate_min)
 								scanstate->aggregate_min = value;
 							scanstate->aggregate_count++;
 						}
-						else if (scanstate->aggregate_fnoid >= 2115 && scanstate->aggregate_fnoid <= 2130)  /* MAX */
+						else if (IS_MAX_AGG(scanstate->aggregate_fnoid))  /* MAX */
 						{
 							if (scanstate->aggregate_count == 0 || value > scanstate->aggregate_max)
 								scanstate->aggregate_max = value;
@@ -1366,22 +1330,22 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 				scanstate->aggregate_result = filtered_count;
 				scanstate->aggregate_isnull = false;
 			}
-			else if (scanstate->aggregate_fnoid >= 2108 && scanstate->aggregate_fnoid <= 2114)  /* SUM */
+			else if (IS_SUM_AGG(scanstate->aggregate_fnoid))  /* SUM */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: SUM aggregate with WHERE computed sum=%.2f from %lld rows",
 					 scanstate->aggregate_sum, (long long) filtered_count);
 			}
-			else if (scanstate->aggregate_fnoid >= 2101 && scanstate->aggregate_fnoid <= 2106)  /* AVG */
+			else if (IS_AVG_AGG(scanstate->aggregate_fnoid))  /* AVG */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: AVG aggregate with WHERE computed sum=%.2f, count=%lld",
 					 scanstate->aggregate_sum, (long long) scanstate->aggregate_count);
 			}
-			else if (scanstate->aggregate_fnoid >= 2131 && scanstate->aggregate_fnoid <= 2146)  /* MIN */
+			else if (IS_MIN_AGG(scanstate->aggregate_fnoid))  /* MIN */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: MIN aggregate with WHERE computed min=%.2f from %lld rows",
 					 scanstate->aggregate_min, (long long) scanstate->aggregate_count);
 			}
-			else if (scanstate->aggregate_fnoid >= 2115 && scanstate->aggregate_fnoid <= 2130)  /* MAX */
+			else if (IS_MAX_AGG(scanstate->aggregate_fnoid))  /* MAX */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: MAX aggregate with WHERE computed max=%.2f from %lld rows",
 					 scanstate->aggregate_max, (long long) scanstate->aggregate_count);
@@ -1492,22 +1456,22 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 						}
 
 						/* Accumulate based on aggregate type */
-						if (scanstate->aggregate_fnoid >= 2108 && scanstate->aggregate_fnoid <= 2114)  /* SUM */
+						if (IS_SUM_AGG(scanstate->aggregate_fnoid))  /* SUM */
 						{
 							scanstate->aggregate_sum += value;
 						}
-						else if (scanstate->aggregate_fnoid >= 2101 && scanstate->aggregate_fnoid <= 2106)  /* AVG */
+						else if (IS_AVG_AGG(scanstate->aggregate_fnoid))  /* AVG */
 						{
 							scanstate->aggregate_sum += value;
 							scanstate->aggregate_count++;
 						}
-						else if (scanstate->aggregate_fnoid >= 2131 && scanstate->aggregate_fnoid <= 2146)  /* MIN */
+						else if (IS_MIN_AGG(scanstate->aggregate_fnoid))  /* MIN */
 						{
 							if (scanstate->aggregate_count == 0 || value < scanstate->aggregate_min)
 								scanstate->aggregate_min = value;
 							scanstate->aggregate_count++;
 						}
-						else if (scanstate->aggregate_fnoid >= 2115 && scanstate->aggregate_fnoid <= 2130)  /* MAX */
+						else if (IS_MAX_AGG(scanstate->aggregate_fnoid))  /* MAX */
 						{
 							if (scanstate->aggregate_count == 0 || value > scanstate->aggregate_max)
 								scanstate->aggregate_max = value;
@@ -1521,22 +1485,22 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 			}
 
 			/* Log result */
-			if (scanstate->aggregate_fnoid >= 2108 && scanstate->aggregate_fnoid <= 2114)  /* SUM */
+			if (IS_SUM_AGG(scanstate->aggregate_fnoid))  /* SUM */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: SUM aggregate computed sum=%.2f from %lld rows",
 					 scanstate->aggregate_sum, (long long) row_count);
 			}
-			else if (scanstate->aggregate_fnoid >= 2101 && scanstate->aggregate_fnoid <= 2106)  /* AVG */
+			else if (IS_AVG_AGG(scanstate->aggregate_fnoid))  /* AVG */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: AVG aggregate computed sum=%.2f, count=%lld from %lld total rows",
 					 scanstate->aggregate_sum, (long long) scanstate->aggregate_count, (long long) row_count);
 			}
-			else if (scanstate->aggregate_fnoid >= 2131 && scanstate->aggregate_fnoid <= 2146)  /* MIN */
+			else if (IS_MIN_AGG(scanstate->aggregate_fnoid))  /* MIN */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: MIN aggregate computed min=%.2f from %lld rows",
 					 scanstate->aggregate_min, (long long) row_count);
 			}
-			else if (scanstate->aggregate_fnoid >= 2115 && scanstate->aggregate_fnoid <= 2130)  /* MAX */
+			else if (IS_MAX_AGG(scanstate->aggregate_fnoid))  /* MAX */
 			{
 				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: MAX aggregate computed max=%.2f from %lld rows",
 					 scanstate->aggregate_max, (long long) row_count);
@@ -1734,12 +1698,6 @@ faircomBeginForeignScan(ForeignScanState *node, int eflags)
 		FAIRCOM_DEBUG_LOG(DEBUG1, "Pre-cached %d field number mappings (eliminates per-row string lookups)", natts);
 	}
 
-	/* Initialize parallel scan state if this is a parallel worker */
-	scanstate->parallel_state = NULL;
-	scanstate->is_parallel_worker = false;
-	scanstate->worker_start_row = 0;
-	scanstate->worker_end_row = -1;  /* -1 means no limit */
-
 	/* Close relation - we've copied the tuple descriptor info we need */
 	if (rel)
 		table_close(rel, NoLock);
@@ -1887,59 +1845,6 @@ faircom_fill_batch(FairComScanState *scanstate, TupleDesc tupdesc)
 		FAIRCOM_DEBUG_LOG(DEBUG1, "Skipped %ld rows for OFFSET", (long)scanstate->rows_skipped);
 	}
 
-	/* Parallel worker: Get next batch of rows to scan */
-	if (scanstate->is_parallel_worker && scanstate->parallel_state)
-	{
-		FairComParallelScanState *pstate = scanstate->parallel_state;
-		uint64 my_start;
-
-		/* Atomically claim next batch of rows */
-		my_start = pg_atomic_fetch_add_u64(&pstate->next_row, pstate->batch_size);
-
-		/* Check if we're past the end of the table */
-		if (my_start >= (uint64)pstate->total_rows)
-		{
-			FAIRCOM_DEBUG_LOG(DEBUG1, "Parallel worker: No more rows to fetch (start=%lu, total=%ld)",
-				 (unsigned long)my_start, (long)pstate->total_rows);
-			scanstate->eof_reached = true;
-			return 0;
-		}
-
-		/* Calculate this worker's row range */
-		scanstate->worker_start_row = (int64)my_start;
-		scanstate->worker_end_row = Min((int64)(my_start + pstate->batch_size), pstate->total_rows);
-
-		FAIRCOM_DEBUG_LOG(DEBUG1, "Parallel worker: Fetching rows %ld to %ld (batch_size=%d)",
-			 (long)scanstate->worker_start_row, (long)scanstate->worker_end_row,
-			 pstate->batch_size);
-
-		/* Skip to worker's starting position */
-		/* Note: This is sequential - could be optimized with FairCom row positioning API */
-		if (scanstate->first_iteration)
-		{
-			ret = ctdbFirstRecord(scanstate->hRecord);
-			if (ret == CTDBRET_OK)
-			{
-				/* Skip to our starting position */
-				int64 skip_count = 0;
-				while (skip_count < scanstate->worker_start_row && ret == CTDBRET_OK)
-				{
-					ret = ctdbNextRecord(scanstate->hRecord);
-					skip_count++;
-				}
-
-				if (ret != CTDBRET_OK && ret != INOT_ERR)
-				{
-					elog(WARNING, "Parallel worker failed to seek to row %ld (ret=%d)",
-						 (long)scanstate->worker_start_row, ret);
-					scanstate->eof_reached = true;
-					return 0;
-				}
-			}
-			scanstate->first_iteration = false;
-		}
-	}
-
 	/* ========== IN LIST OPTIMIZATION ========== */
 	/* If find_mode is -1, this indicates an IN list pattern was detected.
 	 * Use optimized multi-lookup execution instead of scan+filter approach.
@@ -2034,17 +1939,6 @@ faircom_fill_batch(FairComScanState *scanstate, TupleDesc tupdesc)
 		{
 			scanstate->eof_reached = true;
 			break;
-		}
-
-		/* Parallel worker: Stop if we've reached our assigned row range */
-		if (scanstate->is_parallel_worker && scanstate->worker_end_row >= 0)
-		{
-			int64 current_row = scanstate->worker_start_row + scanstate->total_rows_fetched + batch_count;
-			if (current_row >= scanstate->worker_end_row)
-			{
-				scanstate->eof_reached = true;
-				break;
-			}
 		}
 
 		/* Convert FairCom record to Datum array */
@@ -2177,25 +2071,13 @@ faircomIterateForeignScan(ForeignScanState *node)
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 	TupleDesc tupdesc = slot->tts_tupleDescriptor;
 	int i;
-	static bool logged_tupdesc = false;
-
-	if (!logged_tupdesc)
-	{
-		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: IterateForeignScan - scan slot has %d attributes", tupdesc->natts);
-		for (i = 0; i < tupdesc->natts; i++)
-		{
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
-			FAIRCOM_DEBUG_LOG(DEBUG1, "  Slot attr %d: name=%s, type=%u", i, NameStr(attr->attname), attr->atttypid);
-		}
-		logged_tupdesc = true;
-	}
 
 	ExecClearTuple(slot);
 
 	/* Handle aggregate pushdown */
 	if (scanstate->is_aggregate_pushdown)
 	{
-		bool is_count = (scanstate->aggregate_fnoid == 2147 || scanstate->aggregate_fnoid == 2803);
+		bool is_count = (IS_COUNT_AGG(scanstate->aggregate_fnoid));
 
 		/* Special handling for COUNT - return N empty rows */
 		if (is_count)
@@ -2314,20 +2196,6 @@ faircomReScanForeignScan(ForeignScanState *node)
 		{
 			scanstate->aggregate_returned = false;
 			/* Don't reset aggregate_result - it's already computed */
-		}
-
-		/* Reset parallel worker state */
-		if (scanstate->is_parallel_worker && scanstate->parallel_state)
-		{
-			FairComParallelScanState *pstate = scanstate->parallel_state;
-
-			/* Reset atomic counter to beginning */
-			pg_atomic_write_u64(&pstate->next_row, 0);
-
-			scanstate->worker_start_row = 0;
-			scanstate->worker_end_row = -1;
-
-			FAIRCOM_DEBUG_LOG(DEBUG1, "ReScan: Reset parallel worker state");
 		}
 
 		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: ReScan complete - ready to scan from beginning");
@@ -2450,31 +2318,19 @@ faircomExplainForeignScan(ForeignScanState *node, ExplainState *es)
 			ExplainPropertyText("FairCom Batch Efficiency", efficiency, es);
 		}
 
-		/* Show parallel worker information */
-		if (scanstate->is_parallel_worker && scanstate->parallel_state)
-		{
-			char parallel_info[256];
-			snprintf(parallel_info, sizeof(parallel_info),
-					 "worker_range=%ld-%ld nworkers=%d",
-					 (long)scanstate->worker_start_row,
-					 (long)scanstate->worker_end_row,
-					 scanstate->parallel_state->nworkers);
-			ExplainPropertyText("FairCom Parallel Worker", parallel_info, es);
-		}
-
 		/* Show aggregate pushdown status */
 		if (scanstate->is_aggregate_pushdown)
 		{
 			const char *agg_type = "UNKNOWN";
-			if (scanstate->aggregate_fnoid >= 2147 && scanstate->aggregate_fnoid <= 2150)
+			if (IS_COUNT_AGG(scanstate->aggregate_fnoid))
 				agg_type = "COUNT";
-			else if (scanstate->aggregate_fnoid >= 2108 && scanstate->aggregate_fnoid <= 2114)
+			else if (IS_SUM_AGG(scanstate->aggregate_fnoid))
 				agg_type = "SUM";
-			else if (scanstate->aggregate_fnoid >= 2101 && scanstate->aggregate_fnoid <= 2106)
+			else if (IS_AVG_AGG(scanstate->aggregate_fnoid))
 				agg_type = "AVG";
-			else if (scanstate->aggregate_fnoid >= 2131 && scanstate->aggregate_fnoid <= 2146)
+			else if (IS_MIN_AGG(scanstate->aggregate_fnoid))
 				agg_type = "MIN";
-			else if (scanstate->aggregate_fnoid >= 2115 && scanstate->aggregate_fnoid <= 2130)
+			else if (IS_MAX_AGG(scanstate->aggregate_fnoid))
 				agg_type = "MAX";
 
 			char agg_info[128];
@@ -2843,96 +2699,6 @@ faircom_fdw_validator(PG_FUNCTION_ARGS)
 }
 
 /*
- * faircomIsForeignScanParallelSafe
- *		Determine if this foreign scan is safe for parallel execution
- */
-static bool
-faircomIsForeignScanParallelSafe(PlannerInfo *root,
-								 RelOptInfo *rel,
-								 RangeTblEntry *rte)
-{
-	/*
-	 * Parallel scans are disabled for now due to observed backend crashes during
-	 * aggregate + join queries. Re-enable after validating parallel worker safety.
-	 */
-	FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom: Parallel scan disabled to avoid instability");
-	return false;
-}
-
-/*
- * faircomEstimateDSMForeignScan
- *		Estimate shared memory needed for parallel coordination
- */
-static Size
-faircomEstimateDSMForeignScan(ForeignScanState *node,
-							   ParallelContext *pcxt)
-{
-	/* We need space for FairComParallelScanState */
-	return sizeof(FairComParallelScanState);
-}
-
-/*
- * faircomInitializeDSMForeignScan
- *		Initialize shared memory for parallel scan
- */
-static void
-faircomInitializeDSMForeignScan(ForeignScanState *node,
-								 ParallelContext *pcxt,
-								 void *coordinate)
-{
-	FairComParallelScanState *pstate = (FairComParallelScanState *) coordinate;
-	FairComScanState *scanstate = (FairComScanState *) node->fdw_state;
-
-	/* Initialize parallel state */
-	pstate->nworkers = pcxt->nworkers;
-	pstate->total_rows = (int64) node->ss.ps.plan->plan_rows;
-	pg_atomic_init_u64(&pstate->next_row, 0);
-
-	/* Each worker gets a batch of rows to minimize contention */
-	pstate->batch_size = Max(100, (int) (pstate->total_rows / (pstate->nworkers * 10)));
-
-	FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom: Initialized parallel scan - workers=%d total_rows=%ld batch_size=%d",
-		 pstate->nworkers, (long)pstate->total_rows, pstate->batch_size);
-}
-
-/*
- * faircomReInitializeDSMForeignScan
- *		Reset parallel scan state for rescan
- */
-static void
-faircomReInitializeDSMForeignScan(ForeignScanState *node,
-								   ParallelContext *pcxt,
-								   void *coordinate)
-{
-	FairComParallelScanState *pstate = (FairComParallelScanState *) coordinate;
-
-	/* Reset row counter for rescan */
-	pg_atomic_write_u64(&pstate->next_row, 0);
-
-	FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom: Reinitialized parallel scan");
-}
-
-/*
- * faircomInitializeWorkerForeignScan
- *		Initialize worker-specific state
- */
-static void
-faircomInitializeWorkerForeignScan(ForeignScanState *node,
-									shm_toc *toc,
-									void *coordinate)
-{
-	FairComParallelScanState *pstate = (FairComParallelScanState *) coordinate;
-	FairComScanState *scanstate = (FairComScanState *) node->fdw_state;
-
-	/* Store pointer to shared parallel state */
-	scanstate->parallel_state = pstate;
-	scanstate->is_parallel_worker = true;
-
-	FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom: Worker initialized - will fetch rows in batches of %d",
-		 pstate->batch_size);
-}
-
-/*
  * ======================================================================
  * WRITE OPERATIONS (INSERT/UPDATE/DELETE)
  * ======================================================================
@@ -3042,7 +2808,7 @@ faircomBeginForeignModify(ModifyTableState *mtstate,
 	char	   *database = NULL;
 	char	   *path = NULL;
 	char	   *host = NULL;
-	int			port = 5597;  /* default FairCom port */
+	int			port = 6597;  /* default FairCom port */
 	char	   *username = NULL;
 	char	   *password = NULL;
 	char		server_address[256];
@@ -3685,7 +3451,9 @@ faircomEndForeignModify(EState *estate,
 		{
 			int ret = ctdbCommit(fmstate->hSession);
 			if (ret != CTDBRET_OK)
-				FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Failed to commit transaction: %d", ret);
+				ereport(ERROR,
+						(errcode(ERRCODE_FDW_ERROR),
+						 errmsg("FairCom FDW: failed to commit transaction (error %d)", ret)));
 		}
 
 		if (fmstate->hRecord)
@@ -3731,17 +3499,3 @@ faircomIsForeignRelUpdatable(Relation rel)
  * ======================================================================
  */
 
-/*
- * faircomShutdownForeignScan
- *		Clean up after parallel scan
- */
-static void
-faircomShutdownForeignScan(ForeignScanState *node)
-{
-	FairComScanState *scanstate = (FairComScanState *) node->fdw_state;
-
-	if (scanstate && scanstate->is_parallel_worker)
-	{
-		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom: Parallel worker shutting down");
-	}
-}

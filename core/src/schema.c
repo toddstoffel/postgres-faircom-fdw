@@ -6,7 +6,8 @@
  * Implements IMPORT FOREIGN SCHEMA and data type conversions between
  * FairCom and PostgreSQL.
  *
- * Copyright (c) 2026, FairCom Corporation
+ * Copyright (c) 2026, FairCom Corporation. All rights reserved.
+ * Proprietary and confidential.
  *
  *-------------------------------------------------------------------------
  */
@@ -75,19 +76,6 @@ faircom_import_foreign_schema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	elog(NOTICE, "ImportForeignSchema: Generated template - modify table_name option for your tables");
 
 	return commands;
-}
-
-/*
- * Get metadata about a FairCom table
- */
-void
-faircom_get_table_metadata(CTHANDLE hTable, TupleDesc tupdesc)
-{
-	/* TODO: Implement metadata retrieval
-	 * - Get field count
-	 * - For each field, get name and type
-	 * - Validate against tupdesc
-	 */
 }
 
 /*

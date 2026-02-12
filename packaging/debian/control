@@ -6,7 +6,7 @@ Build-Depends: debhelper (>= 10),
                postgresql-server-dev-14,
                libpq-dev
 Standards-Version: 4.5.1
-Homepage: https://github.com/faircom/faircom-fdw
+Homepage: https://github.com/toddstoffel/postgres-faircom-fdw
 
 Package: postgresql-14-faircom-fdw
 Architecture: any
