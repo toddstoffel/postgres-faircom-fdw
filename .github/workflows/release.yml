@@ -19,6 +19,7 @@ jobs:
   build-arm64-deb:
     name: Build ARM64 Debian Package
     runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,6 +74,7 @@ jobs:
   build-arm64-rpm:
     name: Build ARM64 RPM Package
     runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -127,6 +129,7 @@ jobs:
   build-x86_64-deb:
     name: Build x86_64 Debian Package
     runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -172,6 +175,7 @@ jobs:
   build-x86_64-rpm:
     name: Build x86_64 RPM Package
     runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
