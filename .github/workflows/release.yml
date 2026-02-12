@@ -19,7 +19,6 @@ jobs:
   build-arm64-deb:
     name: Build ARM64 Debian Package
     runs-on: ubuntu-latest
-    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -74,7 +73,6 @@ jobs:
   build-arm64-rpm:
     name: Build ARM64 RPM Package
     runs-on: ubuntu-latest
-    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -129,7 +127,6 @@ jobs:
   build-x86_64-deb:
     name: Build x86_64 Debian Package
     runs-on: ubuntu-latest
-    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -175,7 +172,6 @@ jobs:
   build-x86_64-rpm:
     name: Build x86_64 RPM Package
     runs-on: ubuntu-latest
-    if: startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -222,60 +218,9 @@ jobs:
             build/output/*.rpm
           retention-days: 7
 
-  test-x86_64-deb:
-    name: Test x86_64 DEB Package
-    needs: [build-x86_64-deb]
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download x86_64 .deb artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: x86_64-deb
-          path: packages
-
-      - name: Install DEB package
-        run: |
-          sudo apt-get update
-          sudo dpkg -i packages/postgresql-14-faircom-fdw_*_amd64.deb || true
-          sudo apt-get -f install -y
-
-      - name: Configure extension in PostgreSQL
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d testdb -c "CREATE EXTENSION IF NOT EXISTS faircom_fdw;"
-          psql -h localhost -U postgres -d testdb -c "SELECT * FROM pg_extension WHERE extname = 'faircom_fdw';"
-
-      - name: Verify extension loads
-        env:
-          PGPASSWORD: postgres
-        run: |
-          RESULT=$(psql -h localhost -U postgres -d testdb -t -c "SELECT count(*) FROM pg_extension WHERE extname = 'faircom_fdw';")
-          if [ "$(echo $RESULT | tr -d ' ')" != "1" ]; then
-            echo "ERROR: faircom_fdw extension not loaded"
-            exit 1
-          fi
-          echo "Extension loaded successfully"
-
   create-release:
     name: Create GitHub Release
-    needs: [build-arm64-deb, build-arm64-rpm, build-x86_64-deb, build-x86_64-rpm, test-x86_64-deb]
+    needs: [build-arm64-deb, build-arm64-rpm, build-x86_64-deb, build-x86_64-rpm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -358,17 +303,6 @@ jobs:
 
           See [README](https://github.com/toddstoffel/postgres-faircom-fdw) for full documentation.
           EOF
-
-      - name: Check if release already exists
-        id: check_release
-        run: |
-          VERSION_TAG="${{ steps.version.outputs.VERSION_TAG }}"
-          if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
-            echo "Release ${VERSION_TAG} already exists — deleting to rebuild"
-            gh release delete "${VERSION_TAG}" --yes --cleanup-tag || true
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

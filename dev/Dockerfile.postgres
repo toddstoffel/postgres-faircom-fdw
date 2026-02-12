@@ -29,27 +29,32 @@ RUN cd /tmp/fdw-source \
 # ---------------------------------------------------------------------------
 FROM base AS build-package
 
+ARG BUILD_MODE
+ARG RELEASE_VERSION
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-ARG RELEASE_VERSION
-
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN REPO="toddstoffel/postgres-faircom-fdw" \
-    && ARCH=$(dpkg --print-architecture) \
-    && if [ "$RELEASE_VERSION" = "latest" ]; then \
-           TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name'); \
-       else \
-           TAG="$RELEASE_VERSION"; \
-       fi \
-    && VERSION="${TAG#v}" \
-    && URL="https://github.com/${REPO}/releases/download/${TAG}/postgresql-14-faircom-fdw_${VERSION}-1_${ARCH}.deb" \
-    && echo "Downloading ${URL}" \
-    && curl -fSL -o /tmp/faircom-fdw.deb "$URL"
+RUN if [ "$BUILD_MODE" = "package" ]; then \
+        REPO="toddstoffel/postgres-faircom-fdw" \
+        && ARCH=$(dpkg --print-architecture) \
+        && if [ "$RELEASE_VERSION" = "latest" ]; then \
+               TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name'); \
+           else \
+               TAG="$RELEASE_VERSION"; \
+           fi \
+        && VERSION="${TAG#v}" \
+        && URL="https://github.com/${REPO}/releases/download/${TAG}/postgresql-14-faircom-fdw_${VERSION}-1_${ARCH}.deb" \
+        && echo "Downloading ${URL}" \
+        && curl -fSL -o /tmp/faircom-fdw.deb "$URL"; \
+    else \
+        echo "Source build mode — skipping package download"; \
+    fi
 
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime image
