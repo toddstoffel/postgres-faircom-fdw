@@ -2803,15 +2803,8 @@ faircomBeginForeignModify(ModifyTableState *mtstate,
 	ForeignTable *table;
 	ForeignServer *server;
 	UserMapping *user;
-	List	   *options;
 	ListCell   *lc;
-	char	   *database = NULL;
-	char	   *path = NULL;
-	char	   *host = NULL;
-	int			port = 6597;  /* default FairCom port */
-	char	   *username = NULL;
-	char	   *password = NULL;
-	char		server_address[256];
+	CTHANDLE	hSession;
 	int			ret;
 
 	/* Allocate and initialize modify state */
@@ -2840,26 +2833,12 @@ faircomBeginForeignModify(ModifyTableState *mtstate,
 	server = GetForeignServer(table->serverid);
 	user = GetUserMapping(GetUserId(), server->serverid);
 
-	/* Extract options from table, server, and user mapping */
-	options = NIL;
-	options = list_concat(options, table->options);
-	options = list_concat(options, server->options);
-	options = list_concat(options, user->options);
-
-	foreach(lc, options)
+	/* Extract table_name from table options */
+	foreach(lc, table->options)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
-
 		if (strcmp(def->defname, "table_name") == 0)
 			fmstate->tablename = defGetString(def);
-		else if (strcmp(def->defname, "host") == 0)
-			host = defGetString(def);
-		else if (strcmp(def->defname, "port") == 0)
-			port = atoi(defGetString(def));
-		else if (strcmp(def->defname, "username") == 0)
-			username = defGetString(def);
-		else if (strcmp(def->defname, "password") == 0)
-			password = defGetString(def);
 	}
 
 	if (!fmstate->tablename)
@@ -2867,15 +2846,24 @@ faircomBeginForeignModify(ModifyTableState *mtstate,
 				(errcode(ERRCODE_FDW_ERROR),
 				 errmsg("table_name option is required")));
 
-	if (!host)
+	/* Get pooled connection (same as read path) */
+	fmstate->conn = faircom_get_connection(server, user);
+	if (!fmstate->conn)
 		ereport(ERROR,
-				(errcode(ERRCODE_FDW_ERROR),
-				 errmsg("host option is required")));
+				(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
+				 errmsg("could not connect to FairCom server")));
 
-	/* Format server address: #PORT@HOST - The # prefix forces TCP/IP connection */
-	snprintf(server_address, sizeof(server_address), "#%d@%s", port, host);
+	hSession = fmstate->conn->hDatabase ?
+			   fmstate->conn->hDatabase : fmstate->conn->hSession;
 
-	/* Parse table name: database.schema.table */
+	/* Allocate table handle against the pooled session */
+	fmstate->hTable = ctdbAllocTable(hSession);
+	if (!fmstate->hTable)
+		ereport(ERROR,
+				(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
+				 errmsg("failed to allocate FairCom table handle")));
+
+	/* Parse table name: database.schema.table -> path + schema_table */
 	{
 		char *dot1 = strchr(fmstate->tablename, '.');
 		char *dot2 = dot1 ? strchr(dot1 + 1, '.') : NULL;
@@ -2887,72 +2875,29 @@ faircomBeginForeignModify(ModifyTableState *mtstate,
 					(errcode(ERRCODE_FDW_ERROR),
 					 errmsg("table_name must be in format: database.schema.table")));
 
-		/* Extract parts */
 		size_t db_len = dot1 - fmstate->tablename;
 		size_t schema_len = dot2 - dot1 - 1;
 		char *schema_start = dot1 + 1;
 		char *table_start = dot2 + 1;
 
-		/* Build database path: database.dbs */
 		snprintf(table_path, sizeof(table_path), "%.*s.dbs", (int)db_len, fmstate->tablename);
-		path = pstrdup(table_path);
-
-		/* Build table name: schema_table */
 		snprintf(actual_tablename, sizeof(actual_tablename), "%.*s_%s",
 				 (int)schema_len, schema_start, table_start);
 
-		/* Store the actu table name for ctdbOpenTable */
 		fmstate->tablename = pstrdup(actual_tablename);
 
-		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Parsed table - path=%s, table=%s", path, fmstate->tablename);
+		ret = ctdbSetTablePath(fmstate->hTable, (pTEXT)table_path);
+		if (ret != CTDBRET_OK)
+			FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Failed to set table path: %d", ret);
+
+		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Parsed table - path=%s, table=%s", table_path, fmstate->tablename);
 	}
-
-	/* Connect to FairCom */
-	fmstate->hSession = ctdbAllocSession(CTSESSION_CTDB);
-	if (!fmstate->hSession)
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
-				 errmsg("failed to allocate FairCom session")));
-
-	FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Connecting to server=%s, username=%s for write operation",
-		 server_address, username ? username : "(null)");
-
-	ret = ctdbLogon(fmstate->hSession, server_address, username, password);
-	if (ret != CTDBRET_OK)
-	{
-		ctdbFreeSession(fmstate->hSession);
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
-				 errmsg("could not connect to FairCom server: error %d", ret)));
-	}
-
-	/* For SQL databases, we don't use ctdbConnect - the database is just the session handle */
-	fmstate->hDatabase = fmstate->hSession;
-
-	/* Open table */
-	fmstate->hTable = ctdbAllocTable(fmstate->hDatabase);
-	if (!fmstate->hTable)
-	{
-		ctdbDisconnect(fmstate->hDatabase);
-		ctdbFreeDatabase(fmstate->hDatabase);
-		ctdbLogout(fmstate->hSession);
-		ctdbFreeSession(fmstate->hSession);
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
-				 errmsg("failed to allocate FairCom table handle")));
-	}
-
-	/* Set table path */
-	ret = ctdbSetTablePath(fmstate->hTable, (pTEXT)path);
-	if (ret != CTDBRET_OK)
-		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Failed to set table path: %d", ret);
 
 	ret = ctdbOpenTable(fmstate->hTable, fmstate->tablename, CTOPEN_NORMAL);
 	if (ret != CTDBRET_OK)
 	{
 		ctdbFreeTable(fmstate->hTable);
-		ctdbLogout(fmstate->hSession);
-		ctdbFreeSession(fmstate->hSession);
+		fmstate->hTable = NULL;
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_TABLE_NOT_FOUND),
 				 errmsg("could not open FairCom table: %s", fmstate->tablename)));
@@ -2964,17 +2909,14 @@ faircomBeginForeignModify(ModifyTableState *mtstate,
 	{
 		ctdbCloseTable(fmstate->hTable);
 		ctdbFreeTable(fmstate->hTable);
-		ctdbLogout(fmstate->hSession);
-		ctdbFreeSession(fmstate->hSession);
+		fmstate->hTable = NULL;
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
 				 errmsg("failed to allocate FairCom record handle")));
 	}
 
-	/* Start a transaction for write operations */
-	ret = ctdbBegin(fmstate->hSession);
-	if (ret != CTDBRET_OK)
-		FAIRCOM_DEBUG_LOG(DEBUG1, "FairCom FDW: Failed to start transaction: %d (may be okay for some configs)", ret);
+	/* Start transaction via pool — committed by faircom_xact_callback on PG COMMIT */
+	faircom_begin_transaction(fmstate->conn);
 
 	/*
 	 * For UPDATE/DELETE, find the ctid junk column in the subplan's target list.
@@ -3446,28 +3388,24 @@ faircomEndForeignModify(EState *estate,
 
 	if (fmstate)
 	{
-		/* Commit the transaction */
-		if (fmstate->hSession)
-		{
-			int ret = ctdbCommit(fmstate->hSession);
-			if (ret != CTDBRET_OK)
-				ereport(ERROR,
-						(errcode(ERRCODE_FDW_ERROR),
-						 errmsg("FairCom FDW: failed to commit transaction (error %d)", ret)));
-		}
-
+		/* Free record handle */
 		if (fmstate->hRecord)
 			ctdbFreeRecord(fmstate->hRecord);
+
+		/* Close and free table handle */
 		if (fmstate->hTable)
 		{
 			ctdbCloseTable(fmstate->hTable);
 			ctdbFreeTable(fmstate->hTable);
 		}
-		/* For SQL databases, hDatabase is just an alias for hSession, don't free separately */
-		if (fmstate->hSession)
+
+		/* Return connection to pool — transaction committed by faircom_xact_callback */
+		if (fmstate->conn)
 		{
-			ctdbLogout(fmstate->hSession);
-			ctdbFreeSession(fmstate->hSession);
+			fmstate->conn->ref_count--;
+			FAIRCOM_DEBUG_LOG(DEBUG2, "modify ended, connection ref_count now %d",
+				 fmstate->conn->ref_count);
+			fmstate->conn = NULL;
 		}
 
 		pfree(fmstate);

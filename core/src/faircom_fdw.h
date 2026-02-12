@@ -139,14 +139,16 @@ typedef struct FairComPredicate
 	bool		cached_float8_valid;	/* TRUE if cached_float8_value is populated */
 } FairComPredicate;
 
+/* Forward declaration */
+typedef struct FairComConnection FairComConnection;
+
 /*
  * FDW-specific information for write operations (INSERT/UPDATE/DELETE)
  */
 typedef struct FairComModifyState
 {
 	Relation	rel;
-	CTHANDLE	hSession;
-	CTHANDLE	hDatabase;
+	FairComConnection *conn;	/* Pooled connection (owns session lifecycle) */
 	CTHANDLE	hTable;
 	CTHANDLE	hRecord;
 	char	   *tablename;
@@ -156,9 +158,6 @@ typedef struct FairComModifyState
 	AttrNumber *target_attrs;	/* Attribute numbers for modify target list */
 	AttrNumber	ctidAttno;		/* Attribute number of ctid junk column in planSlot */
 } FairComModifyState;
-
-/* Forward declaration */
-typedef struct FairComConnection FairComConnection;
 
 /*
  * FDW-specific information for ForeignScanState
@@ -277,6 +276,7 @@ extern void faircom_cleanup_connections(void);
 extern void faircom_xact_callback(XactEvent event, void *arg);
 extern void faircom_cleanup_idle_connections(void);
 extern void faircom_force_release_connection(FairComConnection *conn);
+extern void faircom_begin_transaction(FairComConnection *conn);
 
 /* schema.c */
 extern List *faircom_import_foreign_schema(ImportForeignSchemaStmt *stmt,
