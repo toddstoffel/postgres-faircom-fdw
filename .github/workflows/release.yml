@@ -111,7 +111,7 @@ jobs:
               cd /build/rpmbuild
               cp /project/packaging/rpm/faircom_fdw.spec SPECS/
               sed -i "s/@VERSION@/${VERSION}/g" SPECS/faircom_fdw.spec
-              tar czf SOURCES/faircom_fdw-${VERSION}.tar.gz --transform 's,^,faircom_fdw-${VERSION}/,' -C /project core packaging README.md
+              tar czf SOURCES/faircom_fdw-${VERSION}.tar.gz --transform 's,^,faircom_fdw-${VERSION}/,' -C /project core packaging README.md LICENSE
               rpmbuild --target aarch64 --define '_topdir /build/rpmbuild' -bb SPECS/faircom_fdw.spec
               mkdir -p /build/output
               find RPMS -name '*.rpm' -exec cp {} /build/output/ \\;
@@ -207,7 +207,7 @@ jobs:
               cd /build/rpmbuild
               cp /project/packaging/rpm/faircom_fdw.spec SPECS/
               sed -i "s/@VERSION@/${VERSION}/g" SPECS/faircom_fdw.spec
-              tar czf SOURCES/faircom_fdw-${VERSION}.tar.gz --transform 's,^,faircom_fdw-${VERSION}/,' -C /project core packaging README.md
+              tar czf SOURCES/faircom_fdw-${VERSION}.tar.gz --transform 's,^,faircom_fdw-${VERSION}/,' -C /project core packaging README.md LICENSE
               rpmbuild --target x86_64 --define '_topdir /build/rpmbuild' -bb SPECS/faircom_fdw.spec
               mkdir -p /build/output
               find RPMS -name '*.rpm' -exec cp {} /build/output/ \\;
