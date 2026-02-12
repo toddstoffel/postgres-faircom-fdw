@@ -223,7 +223,7 @@ Specified in `CREATE USER MAPPING ... OPTIONS (...)`:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `username` | text | `ADMIN` | FairCom server username |
-| `password` | text | *(empty)* | FairCom server password |
+| `password` | text | `ADMIN` | FairCom server password |
 
 ### Foreign Table Options
 
